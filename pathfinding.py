@@ -115,3 +115,39 @@ if __name__ == "__main__":
     )
 
     print("Shortest distance:", distance)
+
+def test_pathfinding():
+    from map_loader import load_map
+
+    print("Pathfinding test started.")
+    print("-" * 40)
+
+    for i in range(1, 6):
+        filename = f"map{i}.txt"
+        data = load_map(filename)
+
+        grid = data["grid"]
+        player_pos = data["player_pos"]
+        exit_pos = data["exit_pos"]
+
+        reachable = can_reach_exit(grid, player_pos, exit_pos)
+        distance = shortest_distance_to_exit(grid, player_pos, exit_pos)
+
+        print(f"{filename}")
+        print(f"Player position: {player_pos}")
+        print(f"Exit position: {exit_pos}")
+        print(f"Reachable: {reachable}")
+        print(f"Shortest distance: {distance}")
+
+        if reachable:
+            print("Result: passed")
+        else:
+            print("Result: failed")
+
+        print("-" * 40)
+
+    print("All pathfinding tests finished.")
+
+
+if __name__ == "__main__":
+    test_pathfinding()

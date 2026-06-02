@@ -165,3 +165,34 @@ if __name__ == "__main__":
         print("Items:", len(data["items"]))
         print("Enemies:", len(data["enemies"]))
         print()
+        
+        
+def test_map_loader():
+    print("Map loader test started.")
+    print("-" * 40)
+
+    for i in range(1, 6):
+        filename = f"map{i}.txt"
+        data = load_map(filename)
+
+        grid = data["grid"]
+        player_pos = data["player_pos"]
+        exit_pos = data["exit_pos"]
+        items = data["items"]
+        enemies = data["enemies"]
+
+        print(f"{filename} loaded successfully.")
+        print(f"Grid size: {len(grid)} x {len(grid[0])}")
+        print(f"Player position: {player_pos}")
+        print(f"Exit position: {exit_pos}")
+        print(f"Items: {len(items)}")
+        print(f"Enemies: {len(enemies)}")
+        print("-" * 40)
+
+    random_map = load_random_map()
+    print("Random map loaded successfully.")
+    print("All map loader tests finished.")
+
+
+if __name__ == "__main__":
+    test_map_loader()
