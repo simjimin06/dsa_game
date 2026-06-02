@@ -174,12 +174,13 @@ class Game:
             return
 
         # 적 이동
-        enemy_actions = move_all_enemies(
-            self.enemies,
-            self.grid,
-            self.player_pos,
-        )
-        turn_actions.extend(enemy_actions)
+        if self.turn_count % 2 == 0:
+            enemy_actions = move_all_enemies(
+                    self.enemies,
+                    self.grid,
+                    self.player_pos,
+            )
+            turn_actions.extend(enemy_actions)
 
         # 적과 충돌하면 데미지
         damage_action = self.apply_enemy_damage()

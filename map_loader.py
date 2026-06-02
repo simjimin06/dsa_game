@@ -78,7 +78,7 @@ def load_map(filename):
                     "id": enemy_id,
                     "type": "wagi",
                     "pos": (r, c),
-                    "damage": 20
+                    "damage": 10
                 })
                 enemy_id += 1
                 row.append(FLOOR)
@@ -88,7 +88,7 @@ def load_map(filename):
                     "id": enemy_id,
                     "type": "pugi",
                     "pos": (r, c),
-                    "damage": 10
+                    "damage": 5
                 })
                 enemy_id += 1
                 row.append(FLOOR)
