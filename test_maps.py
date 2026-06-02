@@ -1,4 +1,6 @@
 # test_maps.py
+#5개의 맵이 전부 클리어 가능한지, 플레이어에서 출구까지의 최단 거리가 올바르게 계산되는지 테스트하는 코드입니다.
+# cli: python test_maps.py
 
 from map_loader import load_map
 from pathfinding import can_reach_exit, shortest_distance_to_exit

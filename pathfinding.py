@@ -1,5 +1,8 @@
 # pathfinding.py
-
+#BFS 구현, 맵이 격자이고 한 칸 이동 비용이 전부 동일하므로 BFS로 최단 거리 계산이 가능.
+#can_reach_exit()는 출구에 도달할 수 있는지 여부를 반환하고, shortest_distance_to_exit()는 출구까지의 최단 거리를 반환. 
+# make_distance_map()는 시작 위치에서 모든 셀까지의 거리를 계산하는 BFS 거리 맵을 만듦. 
+# 이 거리 맵은 Wagi 적 AI에도 활용됩니다.
 from collections import deque
 
 WALL = -1
