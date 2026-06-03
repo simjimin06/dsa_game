@@ -1,5 +1,7 @@
 # enemy_ai.py
 
+import random # 추가
+
 from pathfinding import make_distance_map
 
 WALL = -1
@@ -11,6 +13,34 @@ DIRECTIONS = [
     (0, 1)    # right
 ]
 
+WAGI_DETECTION_RANGE = 7 # 추가
+PUGI_DETECTION_RANGE = 5 # 추가
+
+def choose_random_next_pos(enemy_pos, grid, occupied_positions=None, can_pass_walls=False): # 추가
+    if occupied_positions is None:
+        occupied_positions = set()
+
+    row, col = enemy_pos
+    candidates = []
+
+    for dr, dc in DIRECTIONS:
+        next_pos = (row + dr, col + dc)
+
+        if not in_bounds(grid, next_pos):
+            continue
+
+        if next_pos in occupied_positions:
+            continue
+
+        if not can_pass_walls and not is_walkable_for_wagi(grid, next_pos):
+            continue
+
+        candidates.append(next_pos)
+
+    if not candidates:
+        return enemy_pos
+
+    return random.choice(candidates)
 
 def in_bounds(grid, pos):
     row, col = pos
@@ -130,21 +160,45 @@ def move_all_enemies(enemies, grid, player_pos):
         old_pos = enemy["pos"]
         occupied_positions.remove(old_pos)
 
-        if enemy["type"] == "wagi":
-            new_pos = choose_wagi_next_pos(
-                old_pos,
-                distance_map,
-                grid,
-                occupied_positions
-            )
+        if enemy["type"] == "wagi": # 수정
+            row, col = old_pos
+            distance_to_player = distance_map[row][col]
+
+            if (
+                distance_to_player is not None
+                and distance_to_player <= WAGI_DETECTION_RANGE
+            ):
+                new_pos = choose_wagi_next_pos(
+                    old_pos,
+                    distance_map,
+                    grid,
+                    occupied_positions
+                )
+            else:
+                new_pos = choose_random_next_pos(
+                    old_pos,
+                    grid,
+                    occupied_positions,
+                    can_pass_walls=False
+                )
 
         elif enemy["type"] == "pugi":
-            new_pos = choose_pugi_next_pos(
-                old_pos,
-                player_pos,
-                grid,
-                occupied_positions
-            )
+            distance_to_player = manhattan_distance(old_pos, player_pos)
+
+            if distance_to_player <= PUGI_DETECTION_RANGE:
+                new_pos = choose_pugi_next_pos(
+                    old_pos,
+                    player_pos,
+                    grid,
+                    occupied_positions
+                )
+            else:
+                new_pos = choose_random_next_pos(
+                    old_pos,
+                    grid,
+                    occupied_positions,
+                    can_pass_walls=True
+                )
 
         else:
             new_pos = old_pos

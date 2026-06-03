@@ -78,7 +78,9 @@ def load_map(filename):
                     "id": enemy_id,
                     "type": "wagi",
                     "pos": (r, c),
-                    "damage": 10
+                    "damage": 10,
+                    "max_hp": 20, #추기
+                    "hp": 20 #추가
                 })
                 enemy_id += 1
                 row.append(FLOOR)
@@ -88,7 +90,9 @@ def load_map(filename):
                     "id": enemy_id,
                     "type": "pugi",
                     "pos": (r, c),
-                    "damage": 5
+                    "damage": 5,
+                    "max_hp": 10, #추가
+                    "hp": 10 #추가
                 })
                 enemy_id += 1
                 row.append(FLOOR)

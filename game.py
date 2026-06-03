@@ -1,4 +1,6 @@
 # game.py
+from copy import deepcopy # 추가
+from collections import deque # 추가
 
 import pygame
 
@@ -7,6 +9,8 @@ from enemy_ai import (
     move_all_enemies,
     get_enemies_at_position,
     get_total_damage,
+    WAGI_DETECTION_RANGE, # 추가
+    PUGI_DETECTION_RANGE, # 추가
 )
 from leaderboard import calculate_score, add_score, get_top_scores
 
@@ -15,10 +19,10 @@ WALL = -1
 FLOOR = 0
 EXIT = 2
 
-CELL_SIZE = 16
+CELL_SIZE = 24 # 수정 16 -> 24
 ROWS = 30
 COLS = 60
-PANEL_HEIGHT = 110
+PANEL_HEIGHT = 130 # 수정 110 -> 130
 
 SCREEN_WIDTH = COLS * CELL_SIZE
 SCREEN_HEIGHT = ROWS * CELL_SIZE + PANEL_HEIGHT
@@ -35,9 +39,19 @@ COLORS = {
     "item": (230, 190, 40),
     "wagi": (210, 60, 60),
     "pugi": (150, 70, 210),
+    "arrow": (120, 80, 35), #추가
+    "enemy_hp_back": (30, 30, 30), #추가
+    "enemy_hp": (60, 200, 90), #추가
     "text": (245, 245, 245),
     "black": (0, 0, 0),
     "overlay": (10, 10, 10),
+    # 아래 추가
+    "detection_wagi": (150, 90, 90, 95),
+    "detection_pugi": (125, 100, 155, 95),
+    "detection_overlap": (145, 85, 135, 125),
+    "wagi_detection_tile": (150, 85, 85),
+    "pugi_detection_tile": (120, 90, 145),
+    #---
 }
 
 
@@ -50,8 +64,8 @@ class Game:
         pygame.display.set_caption("Dungeon Escape")
 
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont(None, 24)
-        self.big_font = pygame.font.SysFont(None, 48)
+        self.font = pygame.font.SysFont(None, 28) #수정 24 -> 28
+        self.big_font = pygame.font.SysFont(None, 60) #수정 48 -> 60
 
         self.running = True
         self.reset_game()
@@ -68,11 +82,18 @@ class Game:
         self.max_hp = 100
         self.hp = 100
         self.power = 10
+        self.attack_range = 8 #추가
+        self.facing = (0, 1) # 추가
         self.turn_count = 0
         self.items_collected = 0
+        self.projectiles = [] #추가
+
+        self.prepare_enemies() #추가
 
         self.inventory = {}
         self.undo_stack = []
+
+        self.show_detection_range = False # 추가
 
         self.state = "playing"  # playing, clear, dead
         self.score = None
@@ -83,6 +104,7 @@ class Game:
         while self.running:
             self.clock.tick(FPS)
             self.handle_events()
+            self.update_projectiles() # 추가
             self.draw()
 
         pygame.quit()
@@ -103,6 +125,11 @@ class Game:
         if key == pygame.K_r:
             self.reset_game()
             return
+        # 아래 추가
+        if key == pygame.K_b:
+            self.show_detection_range = not self.show_detection_range
+            return
+        #---
 
         if self.state != "playing":
             return
@@ -125,6 +152,23 @@ class Game:
         elif key == pygame.K_h:
             self.use_potion()
 
+        elif key in (pygame.K_SPACE, pygame.K_f): #추가
+            self.attack()
+
+    def prepare_enemies(self): #추가
+        for enemy in self.enemies:
+            if enemy["type"] == "wagi":
+                enemy.setdefault("max_hp", 20)
+                enemy.setdefault("hp", enemy["max_hp"])
+
+            elif enemy["type"] == "pugi":
+                enemy.setdefault("max_hp", 10)
+                enemy.setdefault("hp", enemy["max_hp"])
+
+            else:
+                enemy.setdefault("max_hp", 10)
+                enemy.setdefault("hp", enemy["max_hp"])
+
     def in_bounds(self, pos):
         row, col = pos
         return 0 <= row < ROWS and 0 <= col < COLS
@@ -137,6 +181,8 @@ class Game:
         return self.grid[row][col] != WALL
 
     def try_move_player(self, dr, dc):
+        self.facing = (dr, dc) #추가
+
         old_pos = self.player_pos
         new_pos = (old_pos[0] + dr, old_pos[1] + dc)
 
@@ -191,6 +237,123 @@ class Game:
 
         if self.hp <= 0:
             self.state = "dead"
+
+    def attack(self): #추가
+        """
+        Fire one arrow in the current facing direction.
+        Attacking always consumes one turn, even if the arrow misses.
+        """
+        turn_actions = []
+        path, target_enemy = self.make_arrow_attack()
+
+        if path:
+            self.projectiles.append({
+                "path": path,
+                "index": 0,
+                "timer": 0,
+            })
+
+        turn_actions.append({
+            "type": "attack",
+            "from": self.player_pos,
+            "direction": self.facing,
+            "path": path,
+            "hit_enemy_id": None if target_enemy is None else target_enemy.get("id"),
+        })
+
+        if target_enemy is not None:
+            old_hp = target_enemy.get("hp", target_enemy.get("max_hp", 10))
+            new_hp = max(0, old_hp - self.power)
+            target_enemy["hp"] = new_hp
+
+            turn_actions.append({
+                "type": "enemy_hp_change",
+                "enemy_id": target_enemy.get("id"),
+                "from": old_hp,
+                "to": new_hp,
+            })
+
+            if new_hp <= 0:
+                defeated_enemy = deepcopy(target_enemy)
+                self.enemies.remove(target_enemy)
+                turn_actions.append({
+                    "type": "defeat_enemy",
+                    "enemy": defeated_enemy,
+                })
+
+        self.turn_count += 1
+
+        # 공격도 한 턴이므로, 기존 이동 턴과 동일하게 짝수 턴마다 적이 이동한다.
+        if self.turn_count % 2 == 0:
+            enemy_actions = move_all_enemies(
+                self.enemies,
+                self.grid,
+                self.player_pos,
+            )
+            turn_actions.extend(enemy_actions)
+
+        damage_action = self.apply_enemy_damage()
+        if damage_action is not None:
+            turn_actions.append(damage_action)
+
+        self.undo_stack.append(turn_actions)
+
+        if self.hp <= 0:
+            self.state = "dead"
+
+    def make_arrow_attack(self): #추가
+        """
+        Return the arrow path and the first enemy hit.
+        The arrow travels straight until it hits a wall, leaves the map,
+        reaches max range, or hits the first enemy.
+        """
+        dr, dc = self.facing
+        row, col = self.player_pos
+        path = []
+
+        for _ in range(self.attack_range):
+            row += dr
+            col += dc
+            pos = (row, col)
+
+            if not self.in_bounds(pos):
+                break
+
+            if self.grid[row][col] == WALL:
+                break
+
+            path.append(pos)
+
+            target_enemy = self.get_enemy_at(pos)
+            if target_enemy is not None:
+                return path, target_enemy
+
+        return path, None
+
+    def get_enemy_at(self, pos): #추가
+        for enemy in self.enemies:
+            if enemy["pos"] == pos:
+                return enemy
+
+        return None
+
+    def update_projectiles(self): #추가
+        alive_projectiles = []
+
+        for projectile in self.projectiles:
+            if not projectile["path"]:
+                continue
+
+            projectile["timer"] += 1
+
+            if projectile["timer"] >= 3:
+                projectile["timer"] = 0
+                projectile["index"] += 1
+
+            if projectile["index"] < len(projectile["path"]):
+                alive_projectiles.append(projectile)
+
+        self.projectiles = alive_projectiles
 
     def apply_enemy_damage(self):
         collided_enemies = get_enemies_at_position(self.enemies, self.player_pos)
@@ -281,6 +444,21 @@ class Game:
             elif action_type == "hp_change":
                 self.hp = action["from"]
 
+            elif action_type == "enemy_hp_change": #추가
+                enemy_id = action["enemy_id"]
+
+                for enemy in self.enemies:
+                    if enemy.get("id") == enemy_id:
+                        enemy["hp"] = action["from"]
+                        break
+
+            elif action_type == "defeat_enemy": #추가
+                enemy_to_restore = deepcopy(action["enemy"])
+
+                if not any(enemy.get("id") == enemy_to_restore.get("id") for enemy in self.enemies):
+                    self.enemies.append(enemy_to_restore)
+                    self.enemies.sort(key=lambda enemy: enemy.get("id", 0))
+
             elif action_type == "use_item":
                 self.add_inventory(action["item"])
 
@@ -321,6 +499,10 @@ class Game:
 
         self.draw_panel()
         self.draw_map()
+
+        if self.show_detection_range: # 추가
+            self.draw_detection_ranges()
+
         self.draw_items()
         self.draw_enemies()
         self.draw_player()
@@ -347,7 +529,7 @@ class Game:
         lines = [
             f"Player: {self.player_name}   HP: {self.hp}/{self.max_hp}   Power: {self.power}   Turn: {self.turn_count}",
             f"Inventory: {inventory_text}",
-            "Move: WASD / Arrow Keys   Undo: U   Use Potion: H   Restart: R   Quit: ESC",
+            "Move: WASD / Arrow Keys   Attack: Space/F   Range: B   Undo: U   Potion: H   Restart: R   Quit: ESC", #수정 attack ,Range 추가
         ]
 
         for i, line in enumerate(lines):
@@ -380,6 +562,114 @@ class Game:
                     1,
                 )
 
+    def get_wagi_detection_cells(self, start_pos, max_distance): #추가
+        visited = {start_pos: 0}
+        queue = deque([start_pos])
+
+        while queue:
+            row, col = queue.popleft()
+            current_distance = visited[(row, col)]
+
+            if current_distance >= max_distance:
+                continue
+
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                next_pos = (row + dr, col + dc)
+                nr, nc = next_pos
+
+                if not self.in_bounds(next_pos):
+                    continue
+
+                if self.grid[nr][nc] == WALL:
+                    continue
+
+                if next_pos in visited:
+                    continue
+
+                visited[next_pos] = current_distance + 1
+                queue.append(next_pos)
+
+        return visited.keys()
+
+
+    def get_pugi_detection_cells(self, start_pos, max_distance): # 추가
+        start_row, start_col = start_pos
+        cells = []
+
+        for dr in range(-max_distance, max_distance + 1):
+            for dc in range(-max_distance, max_distance + 1):
+                if abs(dr) + abs(dc) > max_distance:
+                    continue
+
+                pos = (start_row + dr, start_col + dc)
+
+                if not self.in_bounds(pos):
+                    continue
+
+                cells.append(pos)
+
+        return cells
+
+
+    def draw_detection_ranges(self): # 추가
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+
+        range_map = {}
+
+        for enemy in self.enemies:
+            enemy_type = enemy["type"]
+            enemy_pos = enemy["pos"]
+
+            if enemy_type == "wagi":
+                detection_cells = self.get_wagi_detection_cells(
+                    enemy_pos,
+                    WAGI_DETECTION_RANGE
+                )
+
+            elif enemy_type == "pugi":
+                detection_cells = self.get_pugi_detection_cells(
+                    enemy_pos,
+                    PUGI_DETECTION_RANGE
+                )
+
+            else:
+                continue
+
+            for pos in detection_cells:
+                if pos not in range_map:
+                    range_map[pos] = {
+                        "wagi": False,
+                        "pugi": False,
+                    }
+
+                range_map[pos][enemy_type] = True
+
+        for pos, types in range_map.items():
+            r, c = pos
+
+            if types["wagi"] and types["pugi"]:
+                color = COLORS["detection_overlap"]
+            elif types["wagi"]:
+                color = COLORS["detection_wagi"]
+            elif types["pugi"]:
+                color = COLORS["detection_pugi"]
+            else:
+                continue
+
+            x = c * CELL_SIZE
+            y = PANEL_HEIGHT + r * CELL_SIZE
+
+            rect = pygame.Rect(
+                x + 2,
+                y + 2,
+                CELL_SIZE - 4,
+                CELL_SIZE - 4
+            )
+
+            pygame.draw.rect(overlay, color, rect)
+
+        self.screen.blit(overlay, (0, 0))
+
     def draw_items(self):
         for pos, item_name in self.items.items():
             r, c = pos
@@ -403,12 +693,57 @@ class Game:
 
             rect = pygame.Rect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4)
 
-            if enemy["type"] == "wagi":
-                color = COLORS["wagi"]
+            if enemy["type"] == "wagi": # 추가
+                if self.show_detection_range:
+                    color = COLORS["wagi_detection_tile"]
+                else:
+                    color = COLORS["wagi"]
             else:
-                color = COLORS["pugi"]
+                if self.show_detection_range:
+                    color = COLORS["pugi_detection_tile"]
+                else:
+                    color = COLORS["pugi"]
 
             pygame.draw.rect(self.screen, color, rect)
+            self.draw_enemy_hp_bar(enemy, x, y) #추가
+
+    def draw_enemy_hp_bar(self, enemy, x, y): #추가
+        max_hp = max(1, enemy.get("max_hp", 10))
+        hp = max(0, enemy.get("hp", max_hp))
+
+        bar_width = CELL_SIZE - 4
+        bar_height = 3
+        bar_x = x + 2
+        bar_y = y
+
+        back_rect = pygame.Rect(bar_x, bar_y, bar_width, bar_height)
+        hp_rect = pygame.Rect(
+            bar_x,
+            bar_y,
+            int(bar_width * hp / max_hp),
+            bar_height,
+        )
+
+        pygame.draw.rect(self.screen, COLORS["enemy_hp_back"], back_rect)
+        pygame.draw.rect(self.screen, COLORS["enemy_hp"], hp_rect)
+
+    def draw_projectiles(self): #추가
+        for projectile in self.projectiles:
+            if not projectile["path"]:
+                continue
+
+            index = min(projectile["index"], len(projectile["path"]) - 1)
+            r, c = projectile["path"][index]
+
+            x = c * CELL_SIZE + CELL_SIZE // 2
+            y = PANEL_HEIGHT + r * CELL_SIZE + CELL_SIZE // 2
+
+            pygame.draw.circle(
+                self.screen,
+                COLORS["arrow"],
+                (x, y),
+                CELL_SIZE // 4,
+            )
 
     def draw_player(self):
         r, c = self.player_pos
