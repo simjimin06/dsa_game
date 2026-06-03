@@ -55,7 +55,7 @@ def save_leaderboard(entries):
         json.dump(entries, f, indent=4, ensure_ascii=False)
 
 
-def calculate_score(turn_count, hp=100, items_collected=0):
+def calculate_score(turn_count, hp=100, items_collected=0, enemies_defeated=0):
     """
     Calculate final score.
 
@@ -66,8 +66,9 @@ def calculate_score(turn_count, hp=100, items_collected=0):
     turn_penalty = turn_count * 5
     hp_bonus = hp * 2
     item_bonus = items_collected * 50
+    enemy_bonus = enemies_defeated * 100
 
-    score = base_score - turn_penalty + hp_bonus + item_bonus
+    score = base_score - turn_penalty + hp_bonus + item_bonus + enemy_bonus
 
     return max(score, 0)
 

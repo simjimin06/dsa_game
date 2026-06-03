@@ -70,7 +70,13 @@ def load_map(filename):
                 row.append(EXIT)
 
             elif ch == "I":
-                items[(r, c)] = "potion"
+                items[(r, c)] = random.choice([
+                    "ammo",
+                    "ammo",
+                    "ammo",
+                    "heal",
+                    "damage_boost",
+                ])
                 row.append(FLOOR)
 
             elif ch == "W":

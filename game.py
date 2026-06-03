@@ -51,6 +51,9 @@ COLORS = {
     "detection_overlap": (145, 85, 135, 125),
     "wagi_detection_tile": (150, 85, 85),
     "pugi_detection_tile": (120, 90, 145),
+    "ammo": (90, 90, 90),
+    "heal": (60, 190, 90),
+    "damage_boost": (230, 140, 40),
     #---
 }
 
@@ -87,10 +90,13 @@ class Game:
         self.turn_count = 0
         self.items_collected = 0
         self.projectiles = [] #추가
+        self.enemies_defeated = 0
 
         self.prepare_enemies() #추가
 
-        self.inventory = {}
+        self.inventory = {
+            "ammo": 2,
+        }
         self.undo_stack = []
 
         self.show_detection_range = False # 추가
@@ -202,7 +208,16 @@ class Game:
         # 아이템 획득
         if new_pos in self.items:
             item_name = self.items.pop(new_pos)
-            self.add_inventory(item_name)
+
+            if item_name == "ammo":
+                self.add_inventory("ammo", 1)
+
+            elif item_name == "heal":
+                self.add_inventory("heal", 1)
+
+            elif item_name == "damage_boost":
+                self.add_inventory("damage_boost", 1)
+
             self.items_collected += 1
 
             turn_actions.append({
@@ -243,6 +258,20 @@ class Game:
         Fire one arrow in the current facing direction.
         Attacking always consumes one turn, even if the arrow misses.
         """
+
+        if self.inventory.get("ammo", 0) <= 0:
+            return
+
+        turn_actions = []
+
+        self.remove_inventory("ammo")
+        turn_actions.append({
+            "type": "use_item",
+            "item": "ammo",
+        })
+
+        path, target_enemy = self.make_arrow_attack()
+
         turn_actions = []
         path, target_enemy = self.make_arrow_attack()
 
@@ -262,8 +291,18 @@ class Game:
         })
 
         if target_enemy is not None:
+            attack_power = self.power
+
+            if self.inventory.get("damage_boost", 0) > 0:
+                attack_power += 10
+                self.remove_inventory("damage_boost")
+                turn_actions.append({
+                    "type": "use_item",
+                    "item": "damage_boost",
+                })
+
             old_hp = target_enemy.get("hp", target_enemy.get("max_hp", 10))
-            new_hp = max(0, old_hp - self.power)
+            new_hp = max(0, old_hp - attack_power)
             target_enemy["hp"] = new_hp
 
             turn_actions.append({
@@ -276,9 +315,19 @@ class Game:
             if new_hp <= 0:
                 defeated_enemy = deepcopy(target_enemy)
                 self.enemies.remove(target_enemy)
+
                 turn_actions.append({
                     "type": "defeat_enemy",
                     "enemy": defeated_enemy,
+                })
+
+                old_defeated_count = self.enemies_defeated
+                self.enemies_defeated += 1
+
+                turn_actions.append({
+                    "type": "enemy_defeated_count_change",
+                    "from": old_defeated_count,
+                    "to": self.enemies_defeated,
                 })
 
         self.turn_count += 1
@@ -372,7 +421,7 @@ class Game:
         }
 
     def use_potion(self):
-        if self.inventory.get("potion", 0) <= 0:
+        if self.inventory.get("heal", 0) <= 0:
             return
 
         if self.hp >= self.max_hp:
@@ -380,14 +429,14 @@ class Game:
 
         turn_actions = []
 
-        self.remove_inventory("potion")
+        self.remove_inventory("heal")
         turn_actions.append({
             "type": "use_item",
-            "item": "potion",
+            "item": "heal",
         })
 
         old_hp = self.hp
-        self.hp = min(self.max_hp, self.hp + 30)
+        self.hp = min(self.max_hp, self.hp + 20)
 
         turn_actions.append({
             "type": "hp_change",
@@ -459,13 +508,16 @@ class Game:
                     self.enemies.append(enemy_to_restore)
                     self.enemies.sort(key=lambda enemy: enemy.get("id", 0))
 
+            elif action_type == "enemy_defeated_count_change":
+                self.enemies_defeated = action["from"]
+
             elif action_type == "use_item":
                 self.add_inventory(action["item"])
 
         self.turn_count = max(0, self.turn_count - 1)
 
-    def add_inventory(self, item_name):
-        self.inventory[item_name] = self.inventory.get(item_name, 0) + 1
+    def add_inventory(self, item_name, amount=1):
+        self.inventory[item_name] = self.inventory.get(item_name, 0) + amount
 
     def remove_inventory(self, item_name):
         if item_name not in self.inventory:
@@ -484,6 +536,7 @@ class Game:
                 turn_count=self.turn_count,
                 hp=self.hp,
                 items_collected=self.items_collected,
+                enemies_defeated=self.enemies_defeated,
             )
 
             self.top_scores = add_score(
@@ -506,6 +559,7 @@ class Game:
         self.draw_items()
         self.draw_enemies()
         self.draw_player()
+        self.draw_projectiles() # 추가
 
         if self.state == "clear":
             self.draw_clear_screen()
@@ -527,9 +581,9 @@ class Game:
             inventory_text = "empty"
 
         lines = [
-            f"Player: {self.player_name}   HP: {self.hp}/{self.max_hp}   Power: {self.power}   Turn: {self.turn_count}",
+            f"Player: {self.player_name}   HP: {self.hp}/{self.max_hp}   Power: {self.power}   Ammo: {self.inventory.get('ammo', 0)}   Kills: {self.enemies_defeated}   Turn: {self.turn_count}",
             f"Inventory: {inventory_text}",
-            "Move: WASD / Arrow Keys   Attack: Space/F   Range: B   Undo: U   Potion: H   Restart: R   Quit: ESC", #수정 attack ,Range 추가
+            "Move: WASD / Arrow Keys   Attack: Space/F   Range: B   Undo: U   Heal: H   Restart: R   Quit: ESC", #수정 attack ,Range 추가
         ]
 
         for i, line in enumerate(lines):
@@ -677,9 +731,11 @@ class Game:
             x = c * CELL_SIZE + CELL_SIZE // 2
             y = PANEL_HEIGHT + r * CELL_SIZE + CELL_SIZE // 2
 
+            color = COLORS.get(item_name, COLORS["item"])
+
             pygame.draw.circle(
                 self.screen,
-                COLORS["item"],
+                color,
                 (x, y),
                 CELL_SIZE // 3,
             )
