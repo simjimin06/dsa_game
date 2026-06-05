@@ -64,9 +64,27 @@ The player starts with:
 
 Trying to move into a wall or outside the map is an invalid action and does not consume a turn.
 
+### Map and Random Object Placement
+
+The dungeon layout is loaded from one of the fixed map files in the `maps/` folder.
+
+The wall, floor, player start, and exit positions are fixed by the map file. However, item and enemy positions are randomized each time a map is loaded.
+
+In the map files, the symbols `I`, `W`, and `F` are used to count how many objects should appear:
+
+| Symbol | Meaning                         |
+| ------ | ------------------------------- |
+| `I`    | Number of item objects to place |
+| `W`    | Number of Wagi enemies to place |
+| `F`    | Number of Pugi enemies to place |
+
+After the map is loaded, these objects are placed randomly on available floor cells. The player start and exit positions are not used for random object placement.
+
+Before a selected map is used, BFS validation is used as a safety check to confirm that the exit is reachable from the player start position.
+
 ### Items
 
-Item spawn points are written as `I` in map files. When a map is loaded, each item spawn point is randomly converted into one of the item types.
+When item objects are placed, each item is randomly assigned one of the following types.
 
 | Item           | Effect                                  |
 | -------------- | --------------------------------------- |
@@ -139,35 +157,37 @@ data/leaderboard.json
 
 ## 5. Main Files
 
-| File             | Role                                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
-| `main.py`        | Program entry point. Reads player name and starts the game.                                         |
-| `game.py`        | Main game controller. Handles Pygame loop, movement, turns, attacks, undo, drawing, and game state. |
-| `inventory.py`   | Manages item counts using a dictionary-based inventory.                                             |
-| `map_loader.py`  | Loads map files, separates static grid data from dynamic objects, and validates selected maps.      |
-| `pathfinding.py` | Provides BFS reachability checks and BFS distance maps.                                             |
-| `enemy_ai.py`    | Handles Wagi and Pugi movement logic.                                                               |
-| `leaderboard.py` | Calculates scores and manages heap-based leaderboard ranking.                                       |
-| `create_maps.py` | Helper script used to generate `map1.txt` to `map5.txt`.                                            |
+| File             | Role                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `main.py`        | Program entry point. Reads player name and starts the game.                                           |
+| `game.py`        | Main game controller. Handles Pygame loop, movement, turns, attacks, undo, drawing, and game state.   |
+| `inventory.py`   | Manages item counts using a dictionary-based inventory.                                               |
+| `map_loader.py`  | Loads map files, validates selected maps, and randomly places items and enemies based on map markers. |
+| `pathfinding.py` | Provides BFS reachability checks and BFS distance maps.                                               |
+| `enemy_ai.py`    | Handles Wagi and Pugi movement logic.                                                                 |
+| `leaderboard.py` | Calculates scores and manages heap-based leaderboard ranking.                                         |
+| `create_maps.py` | Helper script used to generate `map1.txt` to `map5.txt`.                                              |
 
 ---
 
 ## 6. Data Structures and Algorithms Summary
 
-| Core Feature    | Data Structure / Algorithm                            | Main File                         |
-| --------------- | ----------------------------------------------------- | --------------------------------- |
-| Dungeon Map     | 2D grid, graph adjacency, BFS validation              | `map_loader.py`, `pathfinding.py` |
-| Undo System     | Stack / LIFO                                          | `game.py`                         |
-| Turn Management | Queue / deque                                         | `game.py`                         |
-| Item Inventory  | Dictionary                                            | `inventory.py`, `game.py`         |
-| Enemy AI        | BFS distance map, Manhattan distance, random movement | `enemy_ai.py`, `pathfinding.py`   |
-| Leaderboard     | Heap / top-k ranking                                  | `leaderboard.py`                  |
+| Core Feature    | Data Structure / Algorithm                                | Main File                         |
+| --------------- | --------------------------------------------------------- | --------------------------------- |
+| Dungeon Map     | 2D grid, graph adjacency, BFS validation, random sampling | `map_loader.py`, `pathfinding.py` |
+| Undo System     | Stack / LIFO                                              | `game.py`                         |
+| Turn Management | Queue / deque                                             | `game.py`                         |
+| Item Inventory  | Dictionary                                                | `inventory.py`, `game.py`         |
+| Enemy AI        | BFS distance map, Manhattan distance, random movement     | `enemy_ai.py`, `pathfinding.py`   |
+| Leaderboard     | Heap / top-k ranking                                      | `leaderboard.py`                  |
 
 ### Dungeon Map
 
 The dungeon is stored as a 30 by 60 grid. Each cell can be treated as a graph node connected to its up, down, left, and right neighbors.
 
-All provided maps are designed to be reachable. Before a selected map is used, BFS validation is used as a safety check to confirm that the exit is reachable from the player start position.
+The map files define the fixed dungeon layout and the number of items and enemies. The actual item and enemy positions are randomly assigned to floor cells when the map is loaded.
+
+All provided maps are designed to be reachable. BFS validation is used as a safety check to confirm that the exit is reachable from the player start position.
 
 ### Undo System
 
