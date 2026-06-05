@@ -23,6 +23,93 @@ MAP_FILES = [
     "map5.txt",
 ]
 
+def get_random_floor_positions(grid, player_pos, exit_pos, count):
+    candidates = []
+
+    for r in range(ROWS):
+        for c in range(COLS):
+            pos = (r, c)
+
+            if grid[r][c] != FLOOR:
+                continue
+
+            if pos == player_pos or pos == exit_pos:
+                continue
+
+            candidates.append(pos)
+
+    if len(candidates) < count:
+        raise ValueError("Not enough floor cells to place random objects.")
+
+    return random.sample(candidates, count)
+
+
+def make_random_item():
+    return random.choice([
+        "ammo",
+        "ammo",
+        "ammo",
+        "heal",
+        "damage_boost",
+    ])
+
+
+def make_enemy(enemy_id, enemy_type, pos):
+    if enemy_type == "wagi":
+        return {
+            "id": enemy_id,
+            "type": "wagi",
+            "pos": pos,
+            "damage": 10,
+            "max_hp": 20,
+            "hp": 20,
+        }
+
+    elif enemy_type == "pugi":
+        return {
+            "id": enemy_id,
+            "type": "pugi",
+            "pos": pos,
+            "damage": 5,
+            "max_hp": 10,
+            "hp": 10,
+        }
+
+    raise ValueError(f"Unknown enemy type: {enemy_type}")
+
+
+def place_random_objects(grid, player_pos, exit_pos, item_count, wagi_count, pugi_count):
+    total_count = item_count + wagi_count + pugi_count
+
+    positions = get_random_floor_positions(
+        grid,
+        player_pos,
+        exit_pos,
+        total_count
+    )
+
+    random.shuffle(positions)
+
+    items = {}
+    enemies = []
+    enemy_id = 1
+
+    for _ in range(item_count):
+        pos = positions.pop()
+        items[pos] = make_random_item()
+
+    for _ in range(wagi_count):
+        pos = positions.pop()
+        enemies.append(make_enemy(enemy_id, "wagi", pos))
+        enemy_id += 1
+
+    for _ in range(pugi_count):
+        pos = positions.pop()
+        enemies.append(make_enemy(enemy_id, "pugi", pos))
+        enemy_id += 1
+
+    return items, enemies
+
 
 def load_map(filename):
     path = MAP_DIR / filename
@@ -38,10 +125,15 @@ def load_map(filename):
     grid = []
     player_pos = None
     exit_pos = None
+    """
     items = {}
     enemies = []
 
     enemy_id = 1
+    """
+    item_count = 0
+    wagi_count = 0
+    pugi_count = 0
 
     for r, line in enumerate(lines):
         row = []
@@ -66,6 +158,7 @@ def load_map(filename):
                 row.append(EXIT)
 
             elif ch == "I":
+                """
                 items[(r, c)] = random.choice([
                     "ammo",
                     "ammo",
@@ -74,8 +167,12 @@ def load_map(filename):
                     "damage_boost",
                 ])
                 row.append(FLOOR)
+                """
+                item_count += 1
+                row.append(FLOOR)
 
             elif ch == "W":
+                """
                 enemies.append({
                     "id": enemy_id,
                     "type": "wagi",
@@ -86,8 +183,12 @@ def load_map(filename):
                 })
                 enemy_id += 1
                 row.append(FLOOR)
+                """
+                wagi_count += 1
+                row.append(FLOOR)
 
             elif ch == "F":
+                """
                 enemies.append({
                     "id": enemy_id,
                     "type": "pugi",
@@ -98,9 +199,37 @@ def load_map(filename):
                 })
                 enemy_id += 1
                 row.append(FLOOR)
+                """
+                pugi_count += 1
+                row.append(FLOOR)
 
         grid.append(row)
 
+
+    if player_pos is None:
+        raise ValueError(f"{filename}: Player start P is missing.")
+
+    if exit_pos is None:
+        raise ValueError(f"{filename}: Exit E is missing.")
+
+    items, enemies = place_random_objects(
+        grid,
+        player_pos,
+        exit_pos,
+        item_count,
+        wagi_count,
+        pugi_count,
+    )
+
+    return {
+        "filename": filename,
+        "grid": grid,
+        "player_pos": player_pos,
+        "exit_pos": exit_pos,
+        "items": items,
+        "enemies": enemies
+    }
+    """
     if player_pos is None:
         raise ValueError(f"{filename}: Player start P is missing.")
 
@@ -115,7 +244,7 @@ def load_map(filename):
         "items": items,
         "enemies": enemies
     }
-
+    """
 
 def load_random_map():
     filename = random.choice(MAP_FILES)
