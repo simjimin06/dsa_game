@@ -1,4 +1,5 @@
 # game.py
+from inventory import Inventory
 from copy import deepcopy # 추가
 from collections import deque # 추가
 
@@ -94,9 +95,9 @@ class Game:
 
         self.prepare_enemies() #추가
 
-        self.inventory = {
-            "ammo": 2,
-        }
+        self.inventory = Inventory({
+            "ammo": 3,
+        })
         self.undo_stack = []
 
         self.show_detection_range = False # 추가
@@ -517,16 +518,10 @@ class Game:
         self.turn_count = max(0, self.turn_count - 1)
 
     def add_inventory(self, item_name, amount=1):
-        self.inventory[item_name] = self.inventory.get(item_name, 0) + amount
+        self.inventory.add(item_name, amount)
 
-    def remove_inventory(self, item_name):
-        if item_name not in self.inventory:
-            return
-
-        self.inventory[item_name] -= 1
-
-        if self.inventory[item_name] <= 0:
-            del self.inventory[item_name]
+    def remove_inventory(self, item_name, amount=1):
+        return self.inventory.remove(item_name, amount)
 
     def finish_game(self):
         self.state = "clear"
@@ -573,12 +568,7 @@ class Game:
         panel_rect = pygame.Rect(0, 0, SCREEN_WIDTH, PANEL_HEIGHT)
         pygame.draw.rect(self.screen, COLORS["panel"], panel_rect)
 
-        inventory_text = ", ".join(
-            f"{name} x{count}" for name, count in self.inventory.items()
-        )
-
-        if not inventory_text:
-            inventory_text = "empty"
+        inventory_text = self.inventory.to_text()
 
         lines = [
             f"Player: {self.player_name}   HP: {self.hp}/{self.max_hp}   Power: {self.power}   Ammo: {self.inventory.get('ammo', 0)}   Kills: {self.enemies_defeated}   Turn: {self.turn_count}",
