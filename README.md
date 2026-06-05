@@ -141,5 +141,3 @@ DSA_GAME/
 ```
 
 
-
-/home/user/Desktop/student1

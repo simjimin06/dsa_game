@@ -1,7 +1,8 @@
 # game.py
+
 from inventory import Inventory
-from copy import deepcopy # 추가
-from collections import deque # 추가
+from copy import deepcopy
+from collections import deque
 
 import pygame
 
@@ -10,9 +11,17 @@ from enemy_ai import (
     move_all_enemies,
     get_enemies_at_position,
     get_total_damage,
-    WAGI_DETECTION_RANGE, # 추가
-    PUGI_DETECTION_RANGE, # 추가
 )
+
+# Detection range constants.
+# If enemy_ai.py already defines these values, use them.
+# If not, use default values here to prevent import errors.
+try:
+    from enemy_ai import WAGI_DETECTION_RANGE, PUGI_DETECTION_RANGE
+except ImportError:
+    WAGI_DETECTION_RANGE = 6
+    PUGI_DETECTION_RANGE = 8
+
 from leaderboard import calculate_score, add_score, get_top_scores
 
 
@@ -20,10 +29,10 @@ WALL = -1
 FLOOR = 0
 EXIT = 2
 
-CELL_SIZE = 24 # 수정 16 -> 24
+CELL_SIZE = 24
 ROWS = 30
 COLS = 60
-PANEL_HEIGHT = 130 # 수정 110 -> 130
+PANEL_HEIGHT = 130
 
 SCREEN_WIDTH = COLS * CELL_SIZE
 SCREEN_HEIGHT = ROWS * CELL_SIZE + PANEL_HEIGHT
@@ -40,22 +49,23 @@ COLORS = {
     "item": (230, 190, 40),
     "wagi": (210, 60, 60),
     "pugi": (150, 70, 210),
-    "arrow": (120, 80, 35), #추가
-    "enemy_hp_back": (30, 30, 30), #추가
-    "enemy_hp": (60, 200, 90), #추가
+    "arrow": (120, 80, 35),
+    "enemy_hp_back": (30, 30, 30),
+    "enemy_hp": (60, 200, 90),
     "text": (245, 245, 245),
     "black": (0, 0, 0),
     "overlay": (10, 10, 10),
-    # 아래 추가
+
     "detection_wagi": (150, 90, 90, 95),
     "detection_pugi": (125, 100, 155, 95),
     "detection_overlap": (145, 85, 135, 125),
     "wagi_detection_tile": (150, 85, 85),
     "pugi_detection_tile": (120, 90, 145),
+
     "ammo": (90, 90, 90),
     "heal": (60, 190, 90),
+    "potion": (60, 190, 90),
     "damage_boost": (230, 140, 40),
-    #---
 }
 
 
@@ -68,8 +78,8 @@ class Game:
         pygame.display.set_caption("Dungeon Escape")
 
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont(None, 28) #수정 24 -> 28
-        self.big_font = pygame.font.SysFont(None, 60) #수정 48 -> 60
+        self.font = pygame.font.SysFont(None, 28)
+        self.big_font = pygame.font.SysFont(None, 60)
 
         self.running = True
         self.reset_game()
@@ -86,21 +96,37 @@ class Game:
         self.max_hp = 100
         self.hp = 100
         self.power = 10
-        self.attack_range = 8 #추가
-        self.facing = (0, 1) # 추가
+        self.attack_range = 8
+        self.facing = (0, 1)
+
         self.turn_count = 0
+
+        # Turn Management:
+        # Queue is used to manage the actor order.
+        # A valid player action processes the queue in the order:
+        # player -> enemy -> player -> enemy ...
+        self.turn_queue = deque(["player", "enemy"])
+
+        # Enemy moves once every 2 valid player turns.
+        # This makes the game easier while still keeping queue-based turn order.
+        self.enemy_move_interval = 2
+
         self.items_collected = 0
-        self.projectiles = [] #추가
+        self.projectiles = []
         self.enemies_defeated = 0
 
-        self.prepare_enemies() #추가
+        self.prepare_enemies()
 
         self.inventory = Inventory({
             "ammo": 3,
         })
+
+        # Undo System:
+        # Stack is used to store each valid turn.
+        # Each turn contains a list of action records.
         self.undo_stack = []
 
-        self.show_detection_range = False # 추가
+        self.show_detection_range = False
 
         self.state = "playing"  # playing, clear, dead
         self.score = None
@@ -111,7 +137,7 @@ class Game:
         while self.running:
             self.clock.tick(FPS)
             self.handle_events()
-            self.update_projectiles() # 추가
+            self.update_projectiles()
             self.draw()
 
         pygame.quit()
@@ -132,11 +158,10 @@ class Game:
         if key == pygame.K_r:
             self.reset_game()
             return
-        # 아래 추가
+
         if key == pygame.K_b:
             self.show_detection_range = not self.show_detection_range
             return
-        #---
 
         if self.state != "playing":
             return
@@ -159,10 +184,10 @@ class Game:
         elif key == pygame.K_h:
             self.use_potion()
 
-        elif key in (pygame.K_SPACE, pygame.K_f): #추가
+        elif key in (pygame.K_SPACE, pygame.K_f):
             self.attack()
 
-    def prepare_enemies(self): #추가
+    def prepare_enemies(self):
         for enemy in self.enemies:
             if enemy["type"] == "wagi":
                 enemy.setdefault("max_hp", 20)
@@ -187,13 +212,54 @@ class Game:
         row, col = pos
         return self.grid[row][col] != WALL
 
+    def normalize_inventory_item(self, item_name):
+        """
+        Map item symbols/names from the map into inventory item names.
+        This keeps old maps using 'potion' compatible with the current 'heal' item.
+        """
+        if item_name == "potion":
+            return "heal"
+
+        return item_name
+
+    def process_turn_queue(self, turn_actions):
+        """
+        Turn Management using Queue.
+
+        The queue controls actor order:
+        player -> enemy -> player -> enemy ...
+
+        This function is called only after a valid player action.
+        Invalid actions, such as walking into a wall, do not call this function.
+        Therefore, invalid actions do not increase the turn count and do not advance the queue.
+        """
+        # Player turn finished.
+        current_actor = self.turn_queue.popleft()
+        self.turn_queue.append(current_actor)
+
+        # Enemy turn.
+        current_actor = self.turn_queue.popleft()
+
+        if current_actor == "enemy":
+            if self.turn_count % self.enemy_move_interval == 0:
+                enemy_actions = move_all_enemies(
+                    self.enemies,
+                    self.grid,
+                    self.player_pos,
+                )
+                turn_actions.extend(enemy_actions)
+
+        self.turn_queue.append(current_actor)
+
     def try_move_player(self, dr, dc):
-        self.facing = (dr, dc) #추가
+        self.facing = (dr, dc)
 
         old_pos = self.player_pos
         new_pos = (old_pos[0] + dr, old_pos[1] + dc)
 
-        # 벽이나 맵 밖이면 행동 실패 → turn 증가 X
+        # Invalid action:
+        # If the player tries to move into a wall or outside the map,
+        # the position does not change and the turn count does not increase.
         if not self.is_walkable_for_player(new_pos):
             return
 
@@ -206,45 +272,33 @@ class Game:
             "to": new_pos,
         })
 
-        # 아이템 획득
+        # Item collection.
         if new_pos in self.items:
-            item_name = self.items.pop(new_pos)
+            map_item_name = self.items.pop(new_pos)
+            inventory_item_name = self.normalize_inventory_item(map_item_name)
 
-            if item_name == "ammo":
-                self.add_inventory("ammo", 1)
-
-            elif item_name == "heal":
-                self.add_inventory("heal", 1)
-
-            elif item_name == "damage_boost":
-                self.add_inventory("damage_boost", 1)
-
+            self.add_inventory(inventory_item_name, 1)
             self.items_collected += 1
 
             turn_actions.append({
                 "type": "collect_item",
                 "pos": new_pos,
-                "item": item_name,
+                "map_item": map_item_name,
+                "inventory_item": inventory_item_name,
             })
 
         self.turn_count += 1
 
-        # 출구 도착이면 enemy 이동 없이 게임 클리어
+        # If the player reaches the exit, finish the game before enemies move.
         if new_pos == self.exit_pos:
             self.undo_stack.append(turn_actions)
             self.finish_game()
             return
 
-        # 적 이동
-        if self.turn_count % 2 == 0:
-            enemy_actions = move_all_enemies(
-                    self.enemies,
-                    self.grid,
-                    self.player_pos,
-            )
-            turn_actions.extend(enemy_actions)
+        # Queue-based turn management.
+        self.process_turn_queue(turn_actions)
 
-        # 적과 충돌하면 데미지
+        # Apply damage if an enemy is on the player's position.
         damage_action = self.apply_enemy_damage()
         if damage_action is not None:
             turn_actions.append(damage_action)
@@ -254,12 +308,11 @@ class Game:
         if self.hp <= 0:
             self.state = "dead"
 
-    def attack(self): #추가
+    def attack(self):
         """
         Fire one arrow in the current facing direction.
-        Attacking always consumes one turn, even if the arrow misses.
+        Attacking consumes one valid turn.
         """
-
         if self.inventory.get("ammo", 0) <= 0:
             return
 
@@ -271,9 +324,6 @@ class Game:
             "item": "ammo",
         })
 
-        path, target_enemy = self.make_arrow_attack()
-
-        turn_actions = []
         path, target_enemy = self.make_arrow_attack()
 
         if path:
@@ -333,14 +383,8 @@ class Game:
 
         self.turn_count += 1
 
-        # 공격도 한 턴이므로, 기존 이동 턴과 동일하게 짝수 턴마다 적이 이동한다.
-        if self.turn_count % 2 == 0:
-            enemy_actions = move_all_enemies(
-                self.enemies,
-                self.grid,
-                self.player_pos,
-            )
-            turn_actions.extend(enemy_actions)
+        # Queue-based turn management.
+        self.process_turn_queue(turn_actions)
 
         damage_action = self.apply_enemy_damage()
         if damage_action is not None:
@@ -351,7 +395,7 @@ class Game:
         if self.hp <= 0:
             self.state = "dead"
 
-    def make_arrow_attack(self): #추가
+    def make_arrow_attack(self):
         """
         Return the arrow path and the first enemy hit.
         The arrow travels straight until it hits a wall, leaves the map,
@@ -380,14 +424,14 @@ class Game:
 
         return path, None
 
-    def get_enemy_at(self, pos): #추가
+    def get_enemy_at(self, pos):
         for enemy in self.enemies:
             if enemy["pos"] == pos:
                 return enemy
 
         return None
 
-    def update_projectiles(self): #추가
+    def update_projectiles(self):
         alive_projectiles = []
 
         for projectile in self.projectiles:
@@ -447,12 +491,8 @@ class Game:
 
         self.turn_count += 1
 
-        enemy_actions = move_all_enemies(
-            self.enemies,
-            self.grid,
-            self.player_pos,
-        )
-        turn_actions.extend(enemy_actions)
+        # Queue-based turn management.
+        self.process_turn_queue(turn_actions)
 
         damage_action = self.apply_enemy_damage()
         if damage_action is not None:
@@ -477,10 +517,14 @@ class Game:
 
             elif action_type == "collect_item":
                 pos = action["pos"]
-                item_name = action["item"]
+                map_item_name = action.get("map_item", action.get("item"))
+                inventory_item_name = action.get(
+                    "inventory_item",
+                    self.normalize_inventory_item(map_item_name)
+                )
 
-                self.items[pos] = item_name
-                self.remove_inventory(item_name)
+                self.items[pos] = map_item_name
+                self.remove_inventory(inventory_item_name)
                 self.items_collected = max(0, self.items_collected - 1)
 
             elif action_type == "move_enemy":
@@ -494,7 +538,7 @@ class Game:
             elif action_type == "hp_change":
                 self.hp = action["from"]
 
-            elif action_type == "enemy_hp_change": #추가
+            elif action_type == "enemy_hp_change":
                 enemy_id = action["enemy_id"]
 
                 for enemy in self.enemies:
@@ -502,10 +546,13 @@ class Game:
                         enemy["hp"] = action["from"]
                         break
 
-            elif action_type == "defeat_enemy": #추가
+            elif action_type == "defeat_enemy":
                 enemy_to_restore = deepcopy(action["enemy"])
 
-                if not any(enemy.get("id") == enemy_to_restore.get("id") for enemy in self.enemies):
+                if not any(
+                    enemy.get("id") == enemy_to_restore.get("id")
+                    for enemy in self.enemies
+                ):
                     self.enemies.append(enemy_to_restore)
                     self.enemies.sort(key=lambda enemy: enemy.get("id", 0))
 
@@ -527,12 +574,19 @@ class Game:
         self.state = "clear"
 
         if not self.score_saved:
-            self.score = calculate_score(
-                turn_count=self.turn_count,
-                hp=self.hp,
-                items_collected=self.items_collected,
-                enemies_defeated=self.enemies_defeated,
-            )
+            try:
+                self.score = calculate_score(
+                    turn_count=self.turn_count,
+                    hp=self.hp,
+                    items_collected=self.items_collected,
+                    enemies_defeated=self.enemies_defeated,
+                )
+            except TypeError:
+                self.score = calculate_score(
+                    turn_count=self.turn_count,
+                    hp=self.hp,
+                    items_collected=self.items_collected,
+                )
 
             self.top_scores = add_score(
                 name=self.player_name,
@@ -548,13 +602,13 @@ class Game:
         self.draw_panel()
         self.draw_map()
 
-        if self.show_detection_range: # 추가
+        if self.show_detection_range:
             self.draw_detection_ranges()
 
         self.draw_items()
         self.draw_enemies()
         self.draw_player()
-        self.draw_projectiles() # 추가
+        self.draw_projectiles()
 
         if self.state == "clear":
             self.draw_clear_screen()
@@ -573,7 +627,7 @@ class Game:
         lines = [
             f"Player: {self.player_name}   HP: {self.hp}/{self.max_hp}   Power: {self.power}   Ammo: {self.inventory.get('ammo', 0)}   Kills: {self.enemies_defeated}   Turn: {self.turn_count}",
             f"Inventory: {inventory_text}",
-            "Move: WASD / Arrow Keys   Attack: Space/F   Range: B   Undo: U   Heal: H   Restart: R   Quit: ESC", #수정 attack ,Range 추가
+            "Move: WASD / Arrow Keys   Attack: Space/F   Range: B   Undo: U   Heal: H   Restart: R   Quit: ESC",
         ]
 
         for i, line in enumerate(lines):
@@ -606,7 +660,7 @@ class Game:
                     1,
                 )
 
-    def get_wagi_detection_cells(self, start_pos, max_distance): #추가
+    def get_wagi_detection_cells(self, start_pos, max_distance):
         visited = {start_pos: 0}
         queue = deque([start_pos])
 
@@ -635,8 +689,7 @@ class Game:
 
         return visited.keys()
 
-
-    def get_pugi_detection_cells(self, start_pos, max_distance): # 추가
+    def get_pugi_detection_cells(self, start_pos, max_distance):
         start_row, start_col = start_pos
         cells = []
 
@@ -654,8 +707,7 @@ class Game:
 
         return cells
 
-
-    def draw_detection_ranges(self): # 추가
+    def draw_detection_ranges(self):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
 
         range_map = {}
@@ -739,7 +791,7 @@ class Game:
 
             rect = pygame.Rect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4)
 
-            if enemy["type"] == "wagi": # 추가
+            if enemy["type"] == "wagi":
                 if self.show_detection_range:
                     color = COLORS["wagi_detection_tile"]
                 else:
@@ -751,9 +803,9 @@ class Game:
                     color = COLORS["pugi"]
 
             pygame.draw.rect(self.screen, color, rect)
-            self.draw_enemy_hp_bar(enemy, x, y) #추가
+            self.draw_enemy_hp_bar(enemy, x, y)
 
-    def draw_enemy_hp_bar(self, enemy, x, y): #추가
+    def draw_enemy_hp_bar(self, enemy, x, y):
         max_hp = max(1, enemy.get("max_hp", 10))
         hp = max(0, enemy.get("hp", max_hp))
 
@@ -773,7 +825,7 @@ class Game:
         pygame.draw.rect(self.screen, COLORS["enemy_hp_back"], back_rect)
         pygame.draw.rect(self.screen, COLORS["enemy_hp"], hp_rect)
 
-    def draw_projectiles(self): #추가
+    def draw_projectiles(self):
         for projectile in self.projectiles:
             if not projectile["path"]:
                 continue
