@@ -1,17 +1,14 @@
 # pathfinding.py
-#BFS 구현, 맵이 격자이고 한 칸 이동 비용이 전부 동일하므로 BFS로 최단 거리 계산이 가능.
-#can_reach_exit()는 출구에 도달할 수 있는지 여부를 반환하고, shortest_distance_to_exit()는 출구까지의 최단 거리를 반환. 
-# make_distance_map()는 시작 위치에서 모든 셀까지의 거리를 계산하는 BFS 거리 맵을 만듦. 
-# 이 거리 맵은 Wagi 적 AI에도 활용됩니다.
+
 from collections import deque
 
 WALL = -1
 
 DIRECTIONS = [
-    (-1, 0),  # up
-    (1, 0),   # down
-    (0, -1),  # left
-    (0, 1)    # right
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1)
 ]
 
 
@@ -24,9 +21,6 @@ def is_walkable(grid, row, col):
 
 
 def can_reach_exit(grid, start_pos, exit_pos):
-    """
-    Return True if the player can reach the exit using BFS.
-    """
     queue = deque([start_pos])
     visited = {start_pos}
 
@@ -49,15 +43,6 @@ def can_reach_exit(grid, start_pos, exit_pos):
 
 
 def make_distance_map(grid, start_pos):
-    """
-    Make BFS distance map from start_pos.
-
-    Used for:
-    1. Checking shortest distance to exit
-    2. Wagi enemy AI
-
-    Unreachable cells remain None.
-    """
     rows = len(grid)
     cols = len(grid[0])
 
@@ -86,44 +71,18 @@ def make_distance_map(grid, start_pos):
 
 
 def shortest_distance_to_exit(grid, start_pos, exit_pos):
-    """
-    Return shortest distance from start_pos to exit_pos.
-    Return None if unreachable.
-    """
     distance = make_distance_map(grid, start_pos)
     er, ec = exit_pos
     return distance[er][ec]
 
 
-if __name__ == "__main__":
-    from map_loader import load_map
-
-    data = load_map("map1.txt")
-
-    result = can_reach_exit(
-        data["grid"],
-        data["player_pos"],
-        data["exit_pos"]
-    )
-
-    print("Can reach exit:", result)
-
-    distance = shortest_distance_to_exit(
-        data["grid"],
-        data["player_pos"],
-        data["exit_pos"]
-    )
-
-    print("Shortest distance:", distance)
-
 def test_pathfinding():
-    from map_loader import load_map
+    from map_loader import load_map, MAP_FILES
 
     print("Pathfinding test started.")
     print("-" * 40)
 
-    for i in range(1, 6):
-        filename = f"map{i}.txt"
+    for filename in MAP_FILES:
         data = load_map(filename)
 
         grid = data["grid"]

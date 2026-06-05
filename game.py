@@ -6,7 +6,7 @@ from collections import deque
 
 import pygame
 
-from map_loader import load_random_map
+from map_loader import load_valid_random_map
 from enemy_ai import (
     move_all_enemies,
     get_enemies_at_position,
@@ -85,7 +85,7 @@ class Game:
         self.reset_game()
 
     def reset_game(self):
-        map_data = load_random_map()
+        map_data = load_valid_random_map()
 
         self.grid = map_data["grid"]
         self.player_pos = map_data["player_pos"]

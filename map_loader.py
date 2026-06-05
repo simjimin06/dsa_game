@@ -15,20 +15,16 @@ MAP_DIR = BASE_DIR / "maps"
 
 VALID_CHARS = {"#", ".", "P", "E", "I", "W", "F"}
 
+MAP_FILES = [
+    "map1.txt",
+    "map2.txt",
+    "map3.txt",
+    "map4.txt",
+    "map5.txt",
+]
+
 
 def load_map(filename):
-    """
-    Load one map file and separate static map data from dynamic objects.
-
-    Returns:
-        {
-            "grid": 2D list,
-            "player_pos": (row, col),
-            "exit_pos": (row, col),
-            "items": {(row, col): item_name},
-            "enemies": [enemy dict, ...]
-        }
-    """
     path = MAP_DIR / filename
 
     if not path.exists():
@@ -85,8 +81,8 @@ def load_map(filename):
                     "type": "wagi",
                     "pos": (r, c),
                     "damage": 10,
-                    "max_hp": 20, #추기
-                    "hp": 20 #추가
+                    "max_hp": 20,
+                    "hp": 20
                 })
                 enemy_id += 1
                 row.append(FLOOR)
@@ -97,8 +93,8 @@ def load_map(filename):
                     "type": "pugi",
                     "pos": (r, c),
                     "damage": 5,
-                    "max_hp": 10, #추가
-                    "hp": 10 #추가
+                    "max_hp": 10,
+                    "hp": 10
                 })
                 enemy_id += 1
                 row.append(FLOOR)
@@ -112,6 +108,7 @@ def load_map(filename):
         raise ValueError(f"{filename}: Exit E is missing.")
 
     return {
+        "filename": filename,
         "grid": grid,
         "player_pos": player_pos,
         "exit_pos": exit_pos,
@@ -121,25 +118,33 @@ def load_map(filename):
 
 
 def load_random_map():
-    """
-    Load one random map from map1.txt ~ map5.txt.
-    """
-    filename = random.choice([
-        "map1.txt",
-        "map2.txt",
-        "map3.txt",
-        "map4.txt",
-        "map5.txt"
-    ])
+    filename = random.choice(MAP_FILES)
     return load_map(filename)
 
 
+def load_valid_random_map(max_attempts=20):
+    """
+    Pick a random map and validate it with BFS before starting the game.
+    If the exit is unreachable, another map is selected.
+    """
+    from pathfinding import can_reach_exit
+
+    for _ in range(max_attempts):
+        filename = random.choice(MAP_FILES)
+        data = load_map(filename)
+
+        if can_reach_exit(data["grid"], data["player_pos"], data["exit_pos"]):
+            return data
+
+    raise ValueError("No valid reachable map found.")
+
+
 def validate_raw_map(lines, filename):
-    """
-    Check whether the raw text map has correct size and characters.
-    """
     if len(lines) != ROWS:
         raise ValueError(f"{filename}: Map must have {ROWS} rows, but has {len(lines)} rows.")
+
+    player_count = 0
+    exit_count = 0
 
     for r, line in enumerate(lines):
         if len(line) != COLS:
@@ -151,38 +156,32 @@ def validate_raw_map(lines, filename):
             if ch not in VALID_CHARS:
                 raise ValueError(f"{filename}: Invalid character found: {ch}")
 
+            if ch == "P":
+                player_count += 1
+            elif ch == "E":
+                exit_count += 1
+
+    if player_count != 1:
+        raise ValueError(f"{filename}: Map must have exactly one P, but has {player_count}.")
+
+    if exit_count != 1:
+        raise ValueError(f"{filename}: Map must have exactly one E, but has {exit_count}.")
+
 
 def load_all_maps():
-    """
-    Useful for testing all five maps.
-    """
     maps = []
 
-    for i in range(1, 6):
-        filename = f"map{i}.txt"
+    for filename in MAP_FILES:
         maps.append(load_map(filename))
 
     return maps
 
 
-if __name__ == "__main__":
-    # Quick test
-    for i in range(1, 6):
-        data = load_map(f"map{i}.txt")
-        print(f"map{i}.txt loaded successfully.")
-        print("Player:", data["player_pos"])
-        print("Exit:", data["exit_pos"])
-        print("Items:", len(data["items"]))
-        print("Enemies:", len(data["enemies"]))
-        print()
-        
-        
 def test_map_loader():
     print("Map loader test started.")
     print("-" * 40)
 
-    for i in range(1, 6):
-        filename = f"map{i}.txt"
+    for filename in MAP_FILES:
         data = load_map(filename)
 
         grid = data["grid"]
@@ -199,8 +198,9 @@ def test_map_loader():
         print(f"Enemies: {len(enemies)}")
         print("-" * 40)
 
-    random_map = load_random_map()
-    print("Random map loaded successfully.")
+    valid_map = load_valid_random_map()
+    print("Valid random map loaded successfully.")
+    print(f"Selected map: {valid_map['filename']}")
     print("All map loader tests finished.")
 
 
